@@ -51,6 +51,4 @@
 #define VIRTIO_ID_VIDEO_DEC    31 /* virtio video encoder */
 #define VIRTIO_ID_SCMI         32 /* VirtIO SCMI */
 #define VIRTIO_ID_VIDEO_CAM    100 /* virtio video camera */
-
-#define VIRTIO_ID_SCMI         32 /* VirtIO SCMI */
 #endif /* _LINUX_VIRTIO_IDS_H */
