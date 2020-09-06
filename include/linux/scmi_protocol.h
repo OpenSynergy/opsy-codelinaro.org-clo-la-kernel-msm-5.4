@@ -522,18 +522,18 @@ struct scmi_notify_ops {
 struct scmi_handle {
 	struct device *dev;
 	struct scmi_revision_info *version;
-	struct scmi_perf_ops *perf_ops;
-	struct scmi_clk_ops *clk_ops;
-	struct scmi_power_ops *power_ops;
-	struct scmi_sensor_ops *sensor_ops;
-	struct scmi_reset_ops *reset_ops;
+	const struct scmi_perf_ops *perf_ops;
+	const struct scmi_clk_ops *clk_ops;
+	const struct scmi_power_ops *power_ops;
+	const struct scmi_sensor_ops *sensor_ops;
+	const struct scmi_reset_ops *reset_ops;
 #ifdef CONFIG_QTI_SCMI_MEMLAT_PROTOCOL
-	struct scmi_memlat_vendor_ops *memlat_ops;
+	const struct scmi_memlat_vendor_ops *memlat_ops;
 #endif
 #ifdef CONFIG_QTI_SCMI_PLH_PROTOCOL
-	struct scmi_plh_vendor_ops *plh_ops;
+	const struct scmi_plh_vendor_ops *plh_ops;
 #endif
-	struct scmi_notify_ops *notify_ops;
+	const struct scmi_notify_ops *notify_ops;
 	/* for protocol internal use */
 	void *perf_priv;
 	void *clk_priv;
