@@ -541,6 +541,7 @@ struct scmi_handle {
 	void *sensor_priv;
 	void *reset_priv;
 	void *notify_priv;
+	void *system_priv;
 };
 
 enum scmi_std_protocol {
@@ -557,6 +558,15 @@ enum scmi_std_protocol {
 #ifdef CONFIG_QTI_SCMI_PLH_PROTOCOL
 	SCMI_PROTOCOL_PLH = 0x81,
 #endif
+};
+
+enum scmi_system_events {
+	SCMI_SYSTEM_SHUTDOWN,
+	SCMI_SYSTEM_COLDRESET,
+	SCMI_SYSTEM_WARMRESET,
+	SCMI_SYSTEM_POWERUP,
+	SCMI_SYSTEM_SUSPEND,
+	SCMI_SYSTEM_MAX
 };
 
 struct scmi_device {
@@ -634,6 +644,7 @@ enum scmi_notification_events {
 	SCMI_EVENT_SENSOR_UPDATE = 0x1,
 	SCMI_EVENT_RESET_ISSUED = 0x0,
 	SCMI_EVENT_BASE_ERROR_EVENT = 0x0,
+	SCMI_EVENT_SYSTEM_POWER_STATE_NOTIFIER = 0x0,
 };
 
 struct scmi_power_state_changed_report {
@@ -641,6 +652,13 @@ struct scmi_power_state_changed_report {
 	unsigned int	agent_id;
 	unsigned int	domain_id;
 	unsigned int	power_state;
+};
+
+struct scmi_system_power_state_notifier_report {
+	ktime_t		timestamp;
+	unsigned int	agent_id;
+	unsigned int	flags;
+	unsigned int	system_state;
 };
 
 struct scmi_perf_limits_report {
