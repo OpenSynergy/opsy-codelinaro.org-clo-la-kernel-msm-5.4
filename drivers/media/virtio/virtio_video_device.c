@@ -184,7 +184,9 @@ build_virtio_video_sglist(struct virtio_video_resource_sg_list *sgl,
 		sgl->entries[i].addr = cpu_to_le64(has_iommu
 							? sg_dma_address(sg)
 							: sg_phys(sg));
-		sgl->entries[i].length = cpu_to_le32(sg->length);
+		sgl->entries[i].length = cpu_to_le32(has_iommu
+							? sg_dma_len(sg)
+							: sg->length);
 	}
 
 	sgl->num_entries = sgt->nents;
@@ -221,7 +223,7 @@ int virtio_video_buf_init(struct vb2_buffer *vb)
 							    vvd->has_iommu);
 		}
 	} else {
-		buf_size = vb->num_planes * VIRTIO_VIDEO_RESOURCE_SG_SIZE(nents);
+		buf_size = vb->num_planes * VIRTIO_VIDEO_RESOURCE_SG_SIZE(1);
 
 		buf = kcalloc(1, buf_size, GFP_KERNEL);
 		if (!buf)
@@ -334,114 +336,6 @@ int virtio_video_querycap(struct file *file, void *fh,
 		 video_dev->name);
 
 	cap->device_caps = video_dev->device_caps;
-	return 0;
-}
-
-int virtio_video_enum_framesizes(struct file *file, void *fh,
-				 struct v4l2_frmsizeenum *f)
-{
-	struct virtio_video_stream *stream = file2stream(file);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt;
-	struct video_format_frame *frm;
-	struct virtio_video_format_frame *frame;
-	int idx = f->index;
-
-	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
-					     f->pixel_format);
-	if (fmt == NULL)
-		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
-						     f->pixel_format);
-	if (fmt == NULL)
-		return -EINVAL;
-
-	if (idx >= fmt->desc.num_frames)
-		return -EINVAL;
-
-	frm = &fmt->frames[idx];
-	frame = &frm->frame;
-
-	if (frame->width.min == frame->width.max &&
-	    frame->height.min == frame->height.max) {
-		f->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-		f->discrete.width = frame->width.min;
-		f->discrete.height = frame->height.min;
-		return 0;
-	}
-
-	f->type = V4L2_FRMSIZE_TYPE_CONTINUOUS;
-	f->stepwise.min_width = frame->width.min;
-	f->stepwise.max_width = frame->width.max;
-	f->stepwise.min_height = frame->height.min;
-	f->stepwise.max_height = frame->height.max;
-	f->stepwise.step_width = frame->width.step;
-	f->stepwise.step_height = frame->height.step;
-	return 0;
-}
-
-static bool in_stepped_interval(struct virtio_video_format_range range,
-				uint32_t point)
-{
-	if (point < range.min || point > range.max)
-		return false;
-
-	if (range.step == 0 && range.min == range.max && range.min == point)
-		return true;
-
-	if (range.step != 0 && (point - range.min) % range.step == 0)
-		return true;
-
-	return false;
-}
-
-int virtio_video_enum_framemintervals(struct file *file, void *fh,
-				      struct v4l2_frmivalenum *f)
-{
-	struct virtio_video_stream *stream = file2stream(file);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt;
-	struct video_format_frame *frm;
-	struct virtio_video_format_frame *frame;
-	struct virtio_video_format_range *frate;
-	int idx = f->index;
-	int f_idx;
-
-	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
-					     f->pixel_format);
-	if (fmt == NULL)
-		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
-						     f->pixel_format);
-	if (fmt == NULL)
-		return -EINVAL;
-
-	for (f_idx = 0; f_idx <= fmt->desc.num_frames; f_idx++) {
-		frm = &fmt->frames[f_idx];
-		frame = &frm->frame;
-		if (in_stepped_interval(frame->width, f->width) &&
-		    in_stepped_interval(frame->height, f->height))
-			break;
-	}
-
-	if (frame == NULL || f->index >= frame->num_rates)
-		return -EINVAL;
-
-	frate = &frm->frame_rates[idx];
-	if (frate->max == frate->min) {
-		f->type = V4L2_FRMIVAL_TYPE_DISCRETE;
-		f->discrete.numerator = 1;
-		f->discrete.denominator = frate->max;
-	} else {
-		f->stepwise.min.numerator = 1;
-		f->stepwise.min.denominator = frate->max;
-		f->stepwise.max.numerator = 1;
-		f->stepwise.max.denominator = frate->min;
-		f->stepwise.step.numerator = 1;
-		f->stepwise.step.denominator = frate->step;
-		if (frate->step == 1)
-			f->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
-		else
-			f->type = V4L2_FRMIVAL_TYPE_STEPWISE;
-	}
 	return 0;
 }
 
@@ -585,20 +479,21 @@ int virtio_video_g_selection(struct file *file, void *fh,
 	}
 
 	switch (sel->target) {
-	case V4L2_SEL_TGT_COMPOSE:
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
 	case V4L2_SEL_TGT_COMPOSE_PADDED:
-	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
+	case V4L2_SEL_TGT_CROP_BOUNDS:
+		sel->r.top = sel->r.left = 0;
 		sel->r.width = info->frame_width;
 		sel->r.height = info->frame_height;
 		break;
-	case V4L2_SEL_TGT_CROP_BOUNDS:
+	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
+	case V4L2_SEL_TGT_COMPOSE:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP:
 		sel->r.top = info->crop.top;
 		sel->r.left = info->crop.left;
-		sel->r.width = info->frame_width;
-		sel->r.height = info->frame_height;
+		sel->r.width = info->crop.width;
+		sel->r.height = info->crop.height;
 		break;
 	default:
 		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,

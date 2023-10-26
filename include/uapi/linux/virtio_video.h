@@ -47,14 +47,16 @@ enum virtio_video_device_type {
 /*
  * Feature bits
  */
+enum {
+	/* Guest pages can be used for video buffers. */
+	VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES = 0,
+	/* The host can process buffers even if they are non-contiguous memory
+	   such as scatter-gather lists. */
+	VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG = 1,
+	/* Support of vendor virtqueues */
+	VIRTIO_VIDEO_F_VENDOR = 2
+};
 
-/* Guest pages can be used for video buffers. */
-#define VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES 0
-/*
- * The host can process buffers even if they are non-contiguous memory such as
- * scatter-gather lists.
- */
-#define VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG 1
 
 #define VIRTIO_VIDEO_MAX_PLANES 8
 

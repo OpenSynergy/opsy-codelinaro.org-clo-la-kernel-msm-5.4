@@ -34,6 +34,10 @@
 
 #define DRIVER_NAME "virtio-video"
 
+#define VIRTIO_ID_VIDEO_DEC 31
+#define VIRTIO_ID_VIDEO_ENC 30
+#define VIRTIO_ID_VIDEO_CAM 100
+
 #define MIN_BUFS_MIN 0
 #define MIN_BUFS_MAX VIDEO_MAX_FRAME
 #define MIN_BUFS_STEP 1
@@ -391,10 +395,6 @@ int virtio_video_dqbuf(struct file *file, void *priv,
 		       struct v4l2_buffer *buf);
 int virtio_video_querycap(struct file *file, void *fh,
 			  struct v4l2_capability *cap);
-int virtio_video_enum_framesizes(struct file *file, void *fh,
-				 struct v4l2_frmsizeenum *f);
-int virtio_video_enum_framemintervals(struct file *file, void *fh,
-				      struct v4l2_frmivalenum *f);
 int virtio_video_g_fmt(struct file *file, void *fh, struct v4l2_format *f);
 int virtio_video_s_fmt(struct file *file, void *fh, struct v4l2_format *f);
 int virtio_video_try_fmt(struct virtio_video_stream *stream,
@@ -422,6 +422,12 @@ uint32_t virtio_video_v4l2_level_to_virtio(uint32_t v4l2_level);
 
 struct video_format *virtio_video_find_video_format(struct list_head *fmts_list,
 						    uint32_t fourcc);
+struct video_format *
+virtio_video_find_compatible_output_format(struct virtio_video_stream *stream,
+					   uint32_t fourcc_format);
+struct video_format *
+virtio_video_find_compatible_input_format(struct virtio_video_stream *stream,
+					  uint32_t fourcc_format);
 void virtio_video_format_from_info(struct video_format_info *info,
 				   struct v4l2_pix_format_mplane *pix_mp);
 void virtio_video_format_fill_default_info(struct video_format_info *dst_info,
@@ -430,6 +436,10 @@ void virtio_video_pix_fmt_sp2mp(const struct v4l2_pix_format *pix,
 				struct v4l2_pix_format_mplane *pix_mp);
 void virtio_video_pix_fmt_mp2sp(const struct v4l2_pix_format_mplane *pix_mp,
 				struct v4l2_pix_format *pix);
+int virtio_video_frmsizeenum_from_fmt(struct video_format *fmt,
+				      struct v4l2_frmsizeenum *f);
+int virtio_video_frmivalenum_from_fmt(struct video_format *fmt,
+				      struct v4l2_frmivalenum *f);
 
 int virtio_video_g_selection(struct file *file, void *fh,
 			     struct v4l2_selection *sel);

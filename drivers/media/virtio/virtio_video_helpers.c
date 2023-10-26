@@ -115,6 +115,13 @@ uint32_t virtio_video_v4l2_profile_to_virtio(uint32_t v4l2_profile)
 	return 0;
 }
 
+/* Unfortunately all necessary RGB formats definitions are not
+ * available before kernel version 5.2. So for compatibility and
+ * according to other available examples these formats are mapped
+ * in a weird way:
+ *   V4L2_PIX_FMT_ABGR32 -> BGRA 32 bit format
+ *   V4L2_PIX_FMT_RGB32  -> RGBA 32 bit format.
+ */
 static struct virtio_video_convert_table format_table[] = {
 	{ VIRTIO_VIDEO_FORMAT_ARGB8888, V4L2_PIX_FMT_ARGB32 },
 	{ VIRTIO_VIDEO_FORMAT_BGRA8888, V4L2_PIX_FMT_ABGR32 },
@@ -286,4 +293,157 @@ void virtio_video_pix_fmt_mp2sp(const struct v4l2_pix_format_mplane *pix_mp,
 	pix->ycbcr_enc = pix_mp->ycbcr_enc;
 	pix->quantization = pix_mp->quantization;
 	pix->xfer_func = pix_mp->xfer_func;
+}
+
+int virtio_video_frmsizeenum_from_fmt(struct video_format *fmt,
+				      struct v4l2_frmsizeenum *f)
+{
+	struct video_format_frame *frm;
+	struct virtio_video_format_frame *frame;
+	int idx = f->index;
+
+	if (fmt == NULL)
+		return -EINVAL;
+
+	if (idx < 0 || idx >= fmt->desc.num_frames)
+		return -EINVAL;
+
+	frm = &fmt->frames[idx];
+	frame = &frm->frame;
+
+	if (frame->width.min == frame->width.max &&
+	    frame->height.min == frame->height.max) {
+		f->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+		f->discrete.width = frame->width.min;
+		f->discrete.height = frame->height.min;
+		return 0;
+	}
+
+	f->type = V4L2_FRMSIZE_TYPE_CONTINUOUS;
+	f->stepwise.min_width = frame->width.min;
+	f->stepwise.max_width = frame->width.max;
+	f->stepwise.min_height = frame->height.min;
+	f->stepwise.max_height = frame->height.max;
+	f->stepwise.step_width = frame->width.step;
+	f->stepwise.step_height = frame->height.step;
+	return 0;
+}
+
+static bool in_stepped_interval(struct virtio_video_format_range range,
+				uint32_t point)
+{
+	if (point < range.min || point > range.max)
+		return false;
+
+	if (range.step == 0 && range.min == range.max && range.min == point)
+		return true;
+
+	if (range.step != 0 && (point - range.min) % range.step == 0)
+		return true;
+
+	return false;
+}
+
+int virtio_video_frmivalenum_from_fmt(struct video_format *fmt,
+				      struct v4l2_frmivalenum *f)
+{
+	struct video_format_frame *frm;
+	struct virtio_video_format_frame *frame = NULL;
+	struct virtio_video_format_range *frate;
+	int idx = f->index;
+	int f_idx;
+
+	if (fmt == NULL)
+		return -EINVAL;
+
+	if (idx < 0)
+		return -EINVAL;
+
+	for (f_idx = 0; f_idx < fmt->desc.num_frames; f_idx++) {
+		frm = &fmt->frames[f_idx];
+		frame = &frm->frame;
+		if (in_stepped_interval(frame->width, f->width) &&
+		    in_stepped_interval(frame->height, f->height))
+			break;
+	}
+
+	if (frame == NULL || idx >= frame->num_rates)
+		return -EINVAL;
+
+	frate = &frm->frame_rates[idx];
+	if (frate->max == frate->min) {
+		f->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+		f->discrete.numerator = 1;
+		f->discrete.denominator = frate->max;
+	} else {
+		f->stepwise.min.numerator = 1;
+		f->stepwise.min.denominator = frate->max;
+		f->stepwise.max.numerator = 1;
+		f->stepwise.max.denominator = frate->min;
+		f->stepwise.step.numerator = 1;
+		f->stepwise.step.denominator = frate->step;
+		if (frate->step == 1)
+			f->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
+		else
+			f->type = V4L2_FRMIVAL_TYPE_STEPWISE;
+	}
+	return 0;
+}
+
+/** Find output video_format compatible with current stream input */
+struct video_format *
+virtio_video_find_compatible_output_format(struct virtio_video_stream *stream,
+					   uint32_t fourcc_format)
+{
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt, *matching_fmt = NULL;
+	unsigned long mask = 0;
+	int bit_num = 0;
+
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     stream->in_info.fourcc_format);
+	if (fmt == NULL)
+		return NULL;
+
+	mask = fmt->desc.mask;
+	list_for_each_entry(fmt, &vvd->output_fmt_list, formats_list_entry) {
+		if (test_bit(bit_num, &mask)) {
+			if (fmt->desc.format == fourcc_format) {
+				matching_fmt = fmt;
+				break;
+			}
+		}
+		bit_num++;
+	}
+
+	return matching_fmt;
+}
+
+/** Find input video_format compatible with current stream output */
+struct video_format *
+virtio_video_find_compatible_input_format(struct virtio_video_stream *stream,
+					  uint32_t fourcc_format)
+{
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt, *matching_fmt = NULL;
+	unsigned long mask = 0;
+	int bit_num = 0;
+
+	fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+					     stream->out_info.fourcc_format);
+	if (fmt == NULL)
+		return NULL;
+
+	mask = fmt->desc.mask;
+	list_for_each_entry(fmt, &vvd->input_fmt_list, formats_list_entry) {
+		if (test_bit(bit_num, &mask)) {
+			if (fmt->desc.format == fourcc_format) {
+				matching_fmt = fmt;
+				break;
+			}
+		}
+		bit_num++;
+	}
+
+	return matching_fmt;
 }
